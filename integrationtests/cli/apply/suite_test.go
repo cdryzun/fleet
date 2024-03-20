@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rancher/fleet/modules/cli/apply"
-	"github.com/rancher/fleet/modules/cli/pkg/client"
+	"github.com/rancher/fleet/internal/client"
+	"github.com/rancher/fleet/internal/cmd/cli/apply"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,15 +14,14 @@ import (
 
 var buf *gbytes.Buffer
 
-func TestFleet(t *testing.T) {
+func TestFleetApply(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Fleet Suite")
+	RunSpecs(t, "Fleet CLI Apply Suite")
 }
 
 // simulates fleet cli execution
-func fleetApply(name string, dirs []string, options *apply.Options) error {
+func fleetApply(name string, dirs []string, options apply.Options) error {
 	buf = gbytes.NewBuffer()
 	options.Output = buf
-
-	return apply.Apply(context.Background(), client.NewGetter("", "", "fleet-local"), name, dirs, options)
+	return apply.CreateBundles(context.Background(), client.NewGetter("", "", "fleet-local"), name, dirs, options)
 }

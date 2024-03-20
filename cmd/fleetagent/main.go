@@ -1,14 +1,19 @@
-// Package main is the entrypoint for the fleet-agent binary. (fleetagent)
+// Package main is the entrypoint for the fleet-agent binary.
 package main
 
 import (
 	_ "net/http/pprof"
 
-	"github.com/rancher/fleet/modules/agent/cmds"
+	"github.com/rancher/fleet/internal/cmd/agent"
 
-	command "github.com/rancher/wrangler-cli"
+	"github.com/rancher/wrangler/v2/pkg/signals"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	command.Main(cmds.App())
+	ctx := signals.SetupSignalContext()
+	cmd := agent.App()
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		logrus.Fatal(err)
+	}
 }

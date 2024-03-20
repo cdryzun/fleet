@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-url="${url-172.18.0.1.omg.howdoi.website}"
+public_hostname="${public_hostname-172.18.0.1.omg.howdoi.website}"
 cluster="${cluster-k3d-upstream}"
 
 kubectl config use-context "$cluster"
@@ -15,10 +15,11 @@ helm upgrade rancher rancher-latest/rancher \
   --install --wait \
   --create-namespace \
   --namespace cattle-system \
-  --set hostname="$url" \
+  --set replicas=1 \
+  --set hostname="$public_hostname" \
   --set bootstrapPassword=admin \
   --set "extraEnv[0].name=CATTLE_SERVER_URL" \
-  --set "extraEnv[0].value=https://$url" \
+  --set "extraEnv[0].value=https://$public_hostname" \
   --set "extraEnv[1].name=CATTLE_BOOTSTRAP_PASSWORD" \
   --set "extraEnv[1].value=rancherpassword"
 
@@ -28,5 +29,6 @@ kubectl -n cattle-system rollout status deploy/rancher
 # wait for rancher to create fleet namespace, deployment and controller
 { grep -q -m 1 "fleet"; kill $!; } < <(kubectl get deployments -n cattle-fleet-system -w)
 kubectl -n cattle-fleet-system rollout status deploy/fleet-controller
+{ grep -E -q -m 1 "fleet-agent-local.*1/1"; kill $!; } < <(kubectl get bundles -n fleet-local -w)
 
 helm list -A

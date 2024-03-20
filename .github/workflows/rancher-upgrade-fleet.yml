@@ -1,16 +1,13 @@
-# Upgrade fleet in specific Rancher versions to latest fleet release and run MC tests
+# Upgrade Fleet in specific Rancher versions to latest fleet release and run MC tests
 name: Upgrade Fleet in Rancher to Latest Release
 
 on:
-  schedule:
-    # Run every other day at 1:00 PM
-    - cron: '0 13 */2 * *'
   workflow_dispatch:
     inputs:
       ref:
         description: "checkout git branch/tag"
         required: true
-        default: "master"
+        default: "main"
       enable_tmate:
         description: 'Enable debugging via tmate'
         required: false
@@ -21,8 +18,7 @@ on:
 env:
   GOARCH: amd64
   CGO_ENABLED: 0
-  SETUP_GO_VERSION: '1.19.*'
-  SETUP_K3D_VERSION: 'v5.4.7'
+  SETUP_K3D_VERSION: 'v5.5.1'
 
 jobs:
   rancher-fleet-upgrade:
@@ -34,46 +30,36 @@ jobs:
         k3s_version:
           # k3d version list k3s | sed 's/+/-/' | sort -h
           # https://hub.docker.com/r/rancher/k3s/tags
-          # 1.19 not working in k3d: failed to find memory cgroup
-          #- v1.19.16-k3s1
-          - v1.20.15-k3s1
-          - v1.24.1-k3s1
+          - v1.24.17-k3s1
+          - v1.28.1-k3s1
         rancher_version:
-          - v2.5.16 # k3s: 1.19 - 1.20
-          - v2.6.11  # k3s: 1.20 - 1.24
-          - v2.7.2  # k3s: 1.23 - 1.24
+          - v2.6.13  # k3s: 1.20 - 1.24
+          - v2.7.6
+          - v2.7.7-rc5
         fleet_version:
-          - "0.7.0-AGENT-rc.1"
+          - "0.9.0-rc.1"
         exclude:
-          - k3s_version: v1.20.15-k3s1
-            rancher_version: v2.7.1
           - k3s_version: v1.24.1-k3s1
-            rancher_version: v2.5.16
+            rancher_version: v2.7.7-rc5
+          - k3s_version: v1.28.1-k3s1
+            rancher_version: v2.6.13
 
     steps:
       -
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.ref }}
       -
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.SETUP_GO_VERSION }}
-      -
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: 'go.mod'
+          check-latest: true
       -
         name: Install Ginkgo CLI
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.8.0
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
       -
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: rancher-cli-cache
         with:
           path: /home/runner/.local/bin
@@ -127,7 +113,7 @@ jobs:
       -
         name: Set up Rancher
         env:
-          url: "172.18.0.1.omg.howdoi.website"
+          public_hostname: "172.18.0.1.omg.howdoi.website"
           fleetns: "${{ matrix.rancher_version == 'v2.5.16' && 'fleet-system' || 'cattle-fleet-system' }}"
         run: |
           ./.github/scripts/setup-rancher.sh "${{matrix.rancher_version}}"
@@ -153,8 +139,7 @@ jobs:
           helm upgrade fleet "$url" \
             --wait -n "$fleetns" \
             --set image.tag="$version" \
-            --set agentImage.tag="$version" \
-            --reuse-values
+            --set agentImage.tag="$version"
           until helm -n "$fleetns" status fleet | grep -q "STATUS: deployed"; do echo waiting for original fleet chart to be deployed; sleep 3; done
           kubectl -n "$fleetns" rollout status deploy/fleet-controller
 
@@ -176,6 +161,9 @@ jobs:
           ginkgo --label-filter="!single-cluster" e2e/installation
       -
         name: E2E tests for examples
+        env:
+          FLEET_E2E_NS: fleet-local
+          FLEET_E2E_NS_DOWNSTREAM: fleet-local
         run: |
           ginkgo --label-filter="!difficult" e2e/multi-cluster
       -
@@ -185,7 +173,7 @@ jobs:
           ./.github/scripts/dump-failed-k3ds.sh
       -
         name: Upload logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: gha-fleet-upgrade-rancher-logs-${{ matrix.rancher_version }}-${{ matrix.k3s_version }}-${{ github.sha }}-${{ github.run_id }}

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+./.github/scripts/create-zot-certs.sh "$@"

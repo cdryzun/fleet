@@ -10,7 +10,7 @@ on:
       ref:
         description: "checkout git branch/tag"
         required: true
-        default: "master"
+        default: "main"
       enable_tmate:
         description: 'Enable debugging via tmate'
         required: false
@@ -18,15 +18,13 @@ on:
   push:
     tags: [ 'v*' ]
     paths-ignore:
-      - 'scripts/**'
       - '*.md'
 
 env:
   GOARCH: amd64
   CGO_ENABLED: 0
-  SETUP_GO_VERSION: '1.19.*'
-  SETUP_K3D_VERSION: 'v5.4.7'
-  SETUP_K3S_VERSION: 'v1.24.1-k3s1'
+  SETUP_K3D_VERSION: 'v5.5.1'
+  SETUP_K3S_VERSION: 'v1.26.8-k3s1'
 
 jobs:
   rancher-integration:
@@ -34,28 +32,20 @@ jobs:
 
     steps:
       -
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.ref }}
       -
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.SETUP_GO_VERSION }}
-      -
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: 'go.mod'
+          check-latest: true
       -
         name: Install Ginkgo CLI
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.8.0
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
       -
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: rancher-cli-cache
         with:
           path: /home/runner/.local/bin
@@ -72,29 +62,26 @@ jobs:
       -
         name: Build fleet binaries
         run: |
-          go build -o bin/fleetcontroller-linux-$GOARCH ./cmd/fleetcontroller
-
-          go build -o "bin/fleet-linux-$GOARCH"
-          go build -o "bin/fleetagent-linux-$GOARCH" ./cmd/fleetagent
+          ./.github/scripts/build-fleet-binaries.sh
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Get uuid
         id: uuid
         run: echo "::set-output name=uuid::$(uuidgen)"
       -
         id: meta-fleet
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             ttl.sh/rancher/fleet-${{ steps.uuid.outputs.uuid }}
           tags: type=raw,value=1h
       -
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: package/Dockerfile
@@ -105,13 +92,13 @@ jobs:
           labels: ${{ steps.meta-fleet.outputs.labels }}
       -
         id: meta-fleet-agent
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             ttl.sh/rancher/fleet-agent-${{ steps.uuid.outputs.uuid }}
           tags: type=raw,value=1h
       -
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: package/Dockerfile.agent
@@ -160,13 +147,13 @@ jobs:
       -
         name: Set up latest Rancher
         env:
-          url: "172.18.0.1.omg.howdoi.website"
+          public_hostname: "172.18.0.1.omg.howdoi.website"
         run: |
           ./.github/scripts/setup-latest-rancher.sh
       -
         name: Register Rancher's downstream clusters
         env:
-          url: "172.18.0.1.omg.howdoi.website"
+          public_hostname: "172.18.0.1.omg.howdoi.website"
         run: |
           ./.github/scripts/wait-for-loadbalancer.sh
           ./.github/scripts/register-downstream-clusters.sh
@@ -182,6 +169,9 @@ jobs:
           ./.github/scripts/upgrade-rancher-fleet-to-dev-fleet.sh ${{ steps.meta-fleet.outputs.tags }} ${{ steps.meta-fleet-agent.outputs.tags }}
       -
         name: E2E tests for examples
+        env:
+          FLEET_E2E_NS: fleet-local
+          FLEET_E2E_NS_DOWNSTREAM: fleet-local
         run: |
           kubectl config use-context k3d-upstream
           ginkgo e2e/multi-cluster
@@ -192,7 +182,7 @@ jobs:
           ./.github/scripts/dump-failed-k3ds.sh
       -
         name: Upload logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: gha-fleet-rancher-logs-${{ github.sha }}-${{ github.run_id }}

@@ -1,4 +1,4 @@
-# Upgrade from latest released fleet to dev version
+# Upgrade Fleet standalone from latest released to dev version
 name: Upgrade Fleet Standalone to HEAD
 
 on:
@@ -15,8 +15,7 @@ on:
 env:
   GOARCH: amd64
   CGO_ENABLED: 0
-  SETUP_GO_VERSION: '1.19.*'
-  SETUP_K3D_VERSION: 'v5.4.7'
+  SETUP_K3D_VERSION: 'v5.5.1'
 
 jobs:
   fleet-upgrade-test:
@@ -24,28 +23,20 @@ jobs:
     strategy:
       matrix:
         k3s_version:
-          - v1.22.10-k3s1
+          - v1.27.5-k3s1
     steps:
       -
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       -
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.SETUP_GO_VERSION }}
-      -
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: 'go.mod'
+          check-latest: true
       -
         name: Install Ginkgo CLI
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.8.0
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
       -
         name: Provision k3d Cluster
         uses: AbsaOSS/k3d-action@v2
@@ -54,7 +45,7 @@ jobs:
           k3d-version: ${{ env.SETUP_K3D_VERSION }}
           cluster-name: "upstream"
           args: >-
-            --agents 3
+            --agents 1
             --network "nw01"
             --image docker.io/rancher/k3s:${{matrix.k3s_version}}
       -
@@ -71,23 +62,19 @@ jobs:
       -
         name: Create example workload
         run: |
-          kubectl apply -n fleet-local -f e2e/assets/single-cluster/bundle-diffs.yaml
+          kubectl apply -n fleet-local -f e2e/assets/installation/bundle-diffs.yaml
       -
         name: Build Fleet Binaries
         run: |
-          go build -o bin/fleetcontroller-linux-$GOARCH ./cmd/fleetcontroller
-
-          go build -o "bin/fleet-linux-$GOARCH"
-          go build -o "bin/fleetagent-linux-$GOARCH" ./cmd/fleetagent
+          ./.github/scripts/build-fleet-binaries.sh
       -
         name: Build Docker Images
         run: |
-          docker build -f package/Dockerfile -t rancher/fleet:dev --build-arg="ARCH=$GOARCH" .
-          docker build -f package/Dockerfile.agent -t rancher/fleet-agent:dev --build-arg="ARCH=$GOARCH" .
+          ./.github/scripts/build-fleet-images.sh
       -
         name: Import Images Into k3d
         run: |
-          k3d image import rancher/fleet:dev rancher/fleet-agent:dev -c upstream
+          ./.github/scripts/k3d-import-retry.sh rancher/fleet:dev rancher/fleet-agent:dev -c upstream
       -
         name: Verify Example Workload
         run: |
@@ -110,7 +97,7 @@ jobs:
           ./.github/scripts/dump-failed-k3ds.sh
       -
         name: Upload Logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: gha-fleet-e2e-logs-${{ github.sha }}-${{ matrix.k3s_version }}-${{ github.run_id }}

@@ -6,6 +6,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
 )
 
 type Command struct {
@@ -44,7 +47,7 @@ func (c Command) Workdir(dir string) Command {
 }
 
 func (c Command) Apply(args ...string) (string, error) {
-	return c.Run(append([]string{"apply"}, args...)...)
+	return c.Run(append([]string{"apply", "--wait"}, args...)...)
 }
 
 func (c Command) Get(args ...string) (string, error) {
@@ -72,7 +75,13 @@ func (c Command) Run(args ...string) (string, error) {
 		args = append([]string{"-n", c.ns}, args...)
 	}
 
-	return c.exec("kubectl", args...)
+	GinkgoWriter.Printf("kubectl %s\n", strings.Join(args, " "))
+	result, err := c.exec("kubectl", args...)
+	if err != nil {
+		GinkgoWriter.Printf("result:%s err:%s\n", result, err)
+	}
+
+	return result, err
 }
 
 func (c Command) exec(command string, args ...string) (string, error) {

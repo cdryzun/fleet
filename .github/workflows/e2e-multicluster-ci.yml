@@ -18,8 +18,7 @@ on:
 env:
   GOARCH: amd64
   CGO_ENABLED: 0
-  SETUP_GO_VERSION: '1.19.*'
-  SETUP_K3D_VERSION: 'v5.4.7'
+  SETUP_K3D_VERSION: 'v5.5.1'
 
 jobs:
   e2e-fleet-mc-test:
@@ -27,37 +26,25 @@ jobs:
 
     steps:
       -
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       -
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.SETUP_GO_VERSION }}
-      -
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: 'go.mod'
+          check-latest: true
       -
         name: Install Ginkgo CLI
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.8.0
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
       -
         name: Build Fleet Binaries
         run: |
-          go build -o bin/fleetcontroller-linux-$GOARCH ./cmd/fleetcontroller
-
-          go build -o "bin/fleet-linux-$GOARCH"
-          go build -o "bin/fleetagent-linux-$GOARCH" ./cmd/fleetagent
+          ./.github/scripts/build-fleet-binaries.sh
       -
         name: Build Docker Images
         run: |
-          docker build -f package/Dockerfile -t rancher/fleet:dev --build-arg="ARCH=$GOARCH" .
-          docker build -f package/Dockerfile.agent -t rancher/fleet-agent:dev --build-arg="ARCH=$GOARCH" .
+          ./.github/scripts/build-fleet-images.sh
       -
         name: Provision k3d Cluster
         uses: AbsaOSS/k3d-action@v2
@@ -68,7 +55,7 @@ jobs:
             -p "80:80@agent:0:direct"
             -p "443:443@agent:0:direct"
             --api-port 6443
-            --agents 3
+            --agents 1
             --network "nw01"
       -
         name: Provision k3d Downstream Cluster
@@ -85,8 +72,8 @@ jobs:
       -
         name: Import Images Into k3d
         run: |
-          k3d image import rancher/fleet:dev rancher/fleet-agent:dev -c upstream
-          k3d image import rancher/fleet-agent:dev -c downstream
+          ./.github/scripts/k3d-import-retry.sh rancher/fleet:dev rancher/fleet-agent:dev -c upstream
+          ./.github/scripts/k3d-import-retry.sh rancher/fleet-agent:dev -c downstream
       -
         name: Set Up Tmate Debug Session
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_tmate == 'true' }}
@@ -102,31 +89,49 @@ jobs:
       -
         name: Deploy and Register Downstream Fleet
         run: |
+          kubectl create ns fleet-default
           kubectl apply -f - <<EOF
           apiVersion: "fleet.cattle.io/v1alpha1"
           kind: ClusterRegistrationToken
           metadata:
             name: second-token
-            namespace: fleet-local
+            namespace: fleet-default
           spec:
             ttl: 12h
           EOF
-          { grep -q -m 1 "second-token"; kill $!; } < <(kubectl get secrets -n fleet-local -l "fleet.cattle.io/managed=true" -w)
+          { grep -q -m 1 "second-token"; kill $!; } < <(kubectl get secrets -n fleet-default -l "fleet.cattle.io/managed=true" -w)
 
-          token=$(kubectl get secret -n fleet-local second-token -o go-template='{{index .data "values" | base64decode}}' | yq eval .token -)
+          token=$(kubectl get secret -n fleet-default second-token -o go-template='{{index .data "values" | base64decode}}' | yq eval .token -)
           ca=$(kubectl get secret -n cattle-fleet-system fleet-controller-bootstrap-token -o go-template='{{index .data "ca.crt" | base64decode}}')
+          apiServerIP=$(kubectl get node k3d-upstream-server-0 -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
 
-          kubectl config use-context k3d-downstream
-          helm -n cattle-fleet-system upgrade --install --create-namespace --wait fleet-agent charts/fleet-agent \
-            --set-string labels.env=test \
-            --set apiServerCA="$ca" \
-            --set apiServerURL="https://172.18.0.1.omg.howdoi.website:6443" \
-            --set clusterNamespace="fleet-local" \
-            --set token="$token"
+          # agent initiated cluster registration
+          helm \
+            --kube-context k3d-downstream \
+            -n cattle-fleet-system \
+              upgrade \
+                --install \
+                --create-namespace \
+                --wait \
+              fleet-agent charts/fleet-agent \
+                --set-string labels.env=test \
+                --set apiServerCA="$ca" \
+                --set apiServerURL="https://$apiServerIP:6443" \
+                --set clusterNamespace="fleet-default" \
+                --set token="$token"
+
+          echo "waiting for downstream cluster to be registered..."
+          { grep -q -m 1 "1/1"; kill $!; } < <(kubectl get cluster -n fleet-default -w)
+
+          echo "waiting for cluster to report being ready..."
+          while [ $(kubectl -n fleet-default get cluster -o jsonpath='{.items[0].status.summary.ready}') -ne 1 ]; do
+            sleep 1
+          done
       -
         name: E2E tests
         env:
           FLEET_E2E_NS: fleet-local
+          FLEET_E2E_NS_DOWNSTREAM: fleet-default
         run: |
           kubectl config use-context k3d-upstream
           ginkgo e2e/multi-cluster
@@ -136,6 +141,7 @@ jobs:
           github.event_name == 'schedule'
         env:
           FLEET_E2E_NS: fleet-local
+          FLEET_E2E_NS_DOWNSTREAM: fleet-default
         run: |
           ginkgo e2e/acceptance/multi-cluster-examples
       -
@@ -145,7 +151,7 @@ jobs:
           ./.github/scripts/dump-failed-k3ds.sh
       -
         name: Upload Logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: gha-fleet-mc-e2e-logs-${{ github.sha }}-${{ github.run_id }}

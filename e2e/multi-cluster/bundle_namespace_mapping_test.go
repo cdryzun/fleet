@@ -1,13 +1,14 @@
 package multicluster_test
 
 import (
+	"math/rand"
 	"time"
-
-	"github.com/rancher/fleet/e2e/testenv"
-	"github.com/rancher/fleet/e2e/testenv/kubectl"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/rancher/fleet/e2e/testenv"
+	"github.com/rancher/fleet/e2e/testenv/kubectl"
 )
 
 var _ = Describe("Bundle Namespace Mapping", Label("difficult"), func() {
@@ -49,9 +50,9 @@ var _ = Describe("Bundle Namespace Mapping", Label("difficult"), func() {
 	Context("with bundlenamespacemapping", func() {
 		When("bundle selector does not match", func() {
 			BeforeEach(func() {
-				namespace = testenv.NewNamespaceName("bnm-nomatch")
+				namespace = testenv.NewNamespaceName("bnm-nomatch", rand.New(rand.NewSource(GinkgoRandomSeed())))
 				asset = "multi-cluster/bundle-namespace-mapping.yaml"
-				data = TemplateData{env.Namespace, namespace, "", "mismatch", false}
+				data = TemplateData{env.ClusterRegistrationNamespace, namespace, "", "mismatch", false}
 			})
 
 			It("does not deploy to the mapped downstream cluster", func() {
@@ -70,7 +71,7 @@ var _ = Describe("Bundle Namespace Mapping", Label("difficult"), func() {
 			BeforeEach(func() {
 				namespace = "project1"
 				asset = "multi-cluster/bundle-namespace-mapping.yaml"
-				data = TemplateData{env.Namespace, namespace, "targetNamespace: project1simpleapp", "one", true}
+				data = TemplateData{env.ClusterRegistrationNamespace, namespace, "targetNamespace: project1simpleapp", "one", true}
 			})
 
 			It("deploys to the mapped downstream cluster", func() {
@@ -89,7 +90,7 @@ var _ = Describe("Bundle Namespace Mapping", Label("difficult"), func() {
 			BeforeEach(func() {
 				namespace = "project2"
 				asset = "multi-cluster/bundle-namespace-mapping.yaml"
-				data = TemplateData{env.Namespace, namespace, "targetNamespace: denythisnamespace", "one", true}
+				data = TemplateData{env.ClusterRegistrationNamespace, namespace, "targetNamespace: denythisnamespace", "one", true}
 			})
 
 			It("denies deployment to downstream cluster", func() {
@@ -106,7 +107,7 @@ var _ = Describe("Bundle Namespace Mapping", Label("difficult"), func() {
 			BeforeEach(func() {
 				namespace = "project3"
 				asset = "multi-cluster/bundle-namespace-mapping.yaml"
-				data = TemplateData{env.Namespace, namespace, "", "one", true}
+				data = TemplateData{env.ClusterRegistrationNamespace, namespace, "", "one", true}
 			})
 
 			It("denies deployment to downstream cluster", func() {

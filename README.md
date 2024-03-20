@@ -9,8 +9,8 @@
 
 ![](./docs/arch.png)
 
-Fleet is GitOps at scale. Fleet is designed to manage up to a million clusters. It's also lightweight
-enough that it works great for a [single cluster](https://fleet.rancher.io/single-cluster-install/) too, but it really shines
+Fleet is GitOps at scale. Fleet is designed to manage multiple clusters. It's also lightweight
+enough that it works great for a single cluster too, but it really shines
 when you get to a large scale. By large scale we mean either a lot of clusters, a lot of deployments, or a lot of
 teams in a single organization.
 
@@ -20,13 +20,15 @@ deploy everything in the cluster. This gives a high degree of control, consisten
 the ability to scale, but to give one a high degree of control and visibility to exactly what is installed on the cluster.
 
 # Quick Start
-Who needs documentation, let's just run this thing!
+
+For more information, have a look at Fleet's [documentation](https://fleet.rancher.io/).
 
 ## Install
 
-Get helm if you don't have it.  Helm 3 is just a CLI and won't do bad insecure
+Get `helm` if you don't have it.  Helm 3 is just a CLI and won't do bad insecure
 things to your cluster.
 
+For instance, using Homebrew:
 ```
 brew install helm
 ```
@@ -35,9 +37,9 @@ Install the Fleet Helm charts (there's two because we separate out CRDs for ulti
 
 ```shell
 helm -n cattle-fleet-system install --create-namespace --wait \
-    fleet-crd https://github.com/rancher/fleet/releases/download/v0.6.0/fleet-crd-0.6.0.tgz
+    fleet-crd https://github.com/rancher/fleet/releases/download/v0.9.0/fleet-crd-0.9.0.tgz
 helm -n cattle-fleet-system install --create-namespace --wait \
-    fleet https://github.com/rancher/fleet/releases/download/v0.6.0/fleet-0.6.0.tgz
+    fleet https://github.com/rancher/fleet/releases/download/v0.9.0/fleet-0.9.0.tgz
 ```
 
 ## Add a Git Repo to watch
@@ -54,7 +56,7 @@ metadata:
   # This namespace is special and auto-wired to deploy to the local cluster
   namespace: fleet-local
 spec:
-  # Everything from this repo will be ran in this cluster. You trust me right?
+  # Everything from this repo will be run in this cluster. You trust me right?
   repo: "https://github.com/rancher/fleet-examples"
   paths:
   - simple
@@ -65,7 +67,7 @@ kubectl apply -f example.yaml
 
 ## Get Status
 
-Get status of what fleet is doing
+Get status of what Fleet is doing:
 
 ```shell
 kubectl -n fleet-local get fleet
@@ -86,5 +88,5 @@ Enjoy and read the [docs](https://fleet.rancher.io/).
 ## License
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Francher%2Ffleet.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Francher%2Ffleet?ref=badge_large)
 
-For developer and maintainer documentation, see [DEVELOPING.md](./DEVELOPING.md).=======
+For developer and maintainer documentation, see [DEVELOPING.md](./DEVELOPING.md).
 

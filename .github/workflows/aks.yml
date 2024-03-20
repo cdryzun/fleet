@@ -8,7 +8,7 @@ on:
       ref:
         description: "checkout git branch/tag"
         required: true
-        default: "master"
+        default: "main"
       keep_cluster:
         description: "Keep the cluster afterwards?"
         required: false
@@ -17,10 +17,8 @@ on:
 env:
   GOARCH: amd64
   CGO_ENABLED: 0
-  SETUP_GO_VERSION: '1.19.*'
   GINKGO_NODES: 1
   FLAKE_ATTEMPTS: 1
-  AWS_REGION: 'us-east-2'
   AKS_MACHINE_TYPE: 'Standard_D3_v2'
 
 jobs:
@@ -32,18 +30,19 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
       -
         name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.SETUP_GO_VERSION }}
+          go-version-file: 'go.mod'
+          check-latest: true
       -
         name: Setup Ginkgo Test Framework
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.8.0
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
 
       # Follow https://github.com/marketplace/actions/azure-login#configure-deployment-credentials
       # az group create --name fleetCI --location eastus2
@@ -77,29 +76,26 @@ jobs:
       -
         name: Build fleet binaries
         run: |
-          go build -o bin/fleetcontroller-linux-$GOARCH ./cmd/fleetcontroller
-
-          go build -o "bin/fleet-linux-$GOARCH"
-          go build -o "bin/fleetagent-linux-$GOARCH" ./cmd/fleetagent
+          ./.github/scripts/build-fleet-binaries.sh
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Get UUID
         id: uuid
         run: echo "uuid=$(uuidgen)" >> $GITHUB_OUTPUT
       -
         id: meta-fleet
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             ttl.sh/rancher/fleet-${{ steps.uuid.outputs.uuid }}
           tags: type=raw,value=1h
       -
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: package/Dockerfile
@@ -110,13 +106,13 @@ jobs:
           labels: ${{ steps.meta-fleet.outputs.labels }}
       -
         id: meta-fleet-agent
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: |
             ttl.sh/rancher/fleet-agent-${{ steps.uuid.outputs.uuid }}
           tags: type=raw,value=1h
       -
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: package/Dockerfile.agent
@@ -132,12 +128,19 @@ jobs:
           echo "${{ steps.meta-fleet.outputs.tags }} ${{ steps.meta-fleet-agent.outputs.tags }}"
           ./.github/scripts/deploy-fleet.sh ${{ steps.meta-fleet.outputs.tags }} ${{ steps.meta-fleet-agent.outputs.tags }}
       -
-        name: Fleet Examples Tests
+        name: Fleet E2E Tests
         env:
           FLEET_E2E_NS: fleet-local
         run: |
           export KUBECONFIG="$GITHUB_WORKSPACE/kubeconfig-fleet-ci"
-          ginkgo e2e/single-cluster
+          ginkgo --label-filter="!infra-setup" e2e/single-cluster e2e/keep-resources
+      -
+        name: Acceptance Tests for Examples
+        env:
+          FLEET_E2E_NS: fleet-local
+        run: |
+          export KUBECONFIG="$GITHUB_WORKSPACE/kubeconfig-fleet-ci"
+          ginkgo e2e/acceptance/single-cluster-examples
       -
         name: Fleet Tests Requiring Github Secrets
         # These tests can't run for PRs, because PRs don't have access to the secrets

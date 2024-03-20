@@ -1,10 +1,11 @@
 kind: GitRepo
 apiVersion: fleet.cattle.io/v1alpha1
 metadata:
-  name: gitrepo-test
+  name: {{.Name}}
 spec:
   repo: {{.Repo}}
-  clientSecretName: git-auth
   branch: {{.Branch}}
+  pollingInterval: {{.PollingInterval}}
+  targetNamespace: {{.TargetNamespace}}
   paths:
   - examples

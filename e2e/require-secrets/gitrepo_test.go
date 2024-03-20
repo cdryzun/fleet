@@ -1,5 +1,8 @@
 package require_secrets
 
+// These test cases rely on an external git server, hence they cannot be run locally nor against PRs.
+// For tests relying on an internal git server, see `e2e/single-cluster`.
+
 import (
 	"bytes"
 	"os"
@@ -36,21 +39,23 @@ var _ = Describe("Git Repo", func() {
 
 	BeforeEach(func() {
 		k = env.Kubectl.Namespace(env.Namespace)
-		gh = githelper.New()
+		gh = githelper.NewSSH()
 
 		out, err := k.Create(
 			"secret", "generic", "git-auth", "--type", "kubernetes.io/ssh-auth",
-			"--from-file=ssh-privatekey="+gh.SSHKey,
-			"--from-file=ssh-publickey="+gh.SSHPubKey,
+			"--from-file=ssh-privatekey="+os.Getenv("GIT_SSH_KEY"),
+			"--from-file=ssh-publickey="+os.Getenv("GIT_SSH_PUBKEY"),
 		)
 		Expect(err).ToNot(HaveOccurred(), out)
 
-		err = testenv.ApplyTemplate(k, testenv.AssetPath("gitrepo/gitrepo.yaml"), struct {
-			Repo   string
-			Branch string
+		err = testenv.ApplyTemplate(k, testenv.AssetPath("gitrepo/gitrepo_with_auth.yaml"), struct {
+			Repo            string
+			Branch          string
+			PollingInterval string
 		}{
-			gh.URL,
+			gh.GetURL(),
 			gh.Branch,
+			"15s", // default
 		})
 		Expect(err).ToNot(HaveOccurred(), out)
 

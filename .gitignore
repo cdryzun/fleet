@@ -1,5 +1,4 @@
 /build
-/.dapper
 /.cache
 /bin
 /dist
@@ -11,4 +10,8 @@
 docs/fleet-agent/
 docs/fleet-cli/
 docs/fleet-controller/
+e2e/testenv/infra/infra
+*.tgz
 ^fleet$
+FleetCI-RootCA
+.envrc

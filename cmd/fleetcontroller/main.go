@@ -1,16 +1,21 @@
-// Package main provides the entrypoint for the fleet-controller binary (fleetcontroller)
+// Package main provides the entrypoint for the fleet-controller binary.
 package main
 
 import (
 	_ "net/http/pprof"
 
-	controller "github.com/rancher/fleet/modules/controller/cmds"
+	_ "github.com/rancher/wrangler/v2/pkg/generated/controllers/apiextensions.k8s.io"
+	_ "github.com/rancher/wrangler/v2/pkg/generated/controllers/networking.k8s.io"
+	"github.com/rancher/wrangler/v2/pkg/signals"
+	"github.com/sirupsen/logrus"
 
-	command "github.com/rancher/wrangler-cli"
-	_ "github.com/rancher/wrangler/pkg/generated/controllers/apiextensions.k8s.io"
-	_ "github.com/rancher/wrangler/pkg/generated/controllers/networking.k8s.io"
+	"github.com/rancher/fleet/internal/cmd/controller"
 )
 
 func main() {
-	command.Main(controller.App())
+	ctx := signals.SetupSignalContext()
+	cmd := controller.App()
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		logrus.Fatal(err)
+	}
 }

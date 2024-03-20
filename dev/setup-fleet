@@ -3,25 +3,27 @@
 
 set -euxo pipefail
 
+cluster_name=${1-upstream}
+
 if [ ! -d ./charts/fleet ]; then
   echo "please change the current directory to the fleet repo checkout"
   exit 1
 fi
 
 # single cluster
-host=$( docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' k3d-upstream-server-0 )
-ca=$( kubectl config view --flatten -o jsonpath='{.clusters[?(@.name == "k3d-upstream")].cluster.certificate-authority-data}' | base64 -d )
+host=$( docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-$cluster_name-server-0" )
+ca=$( kubectl config view --flatten -o jsonpath='{.clusters[?(@.name == "k3d-'"$cluster_name"'")].cluster.certificate-authority-data}' | base64 -d )
 server="https://$host:6443"
 helm -n cattle-fleet-system upgrade --install --create-namespace --wait fleet-crd charts/fleet-crd
 helm -n cattle-fleet-system upgrade --install --create-namespace --wait --reset-values \
   --set apiServerCA="$ca" \
   --set apiServerURL="$server" \
-  --set debug=true --set debugLevel=99 fleet charts/fleet
+  --set debug=true --set debugLevel=1 fleet charts/fleet
 
 # wait for controller and agent rollout
-kubectl -n cattle-fleet-system rollout status deploy/fleet-controller
+kubectl -n cattle-fleet-system rollout status deployment/fleet-controller
 { grep -E -q -m 1 "fleet-agent-local.*1/1"; kill $!; } < <(kubectl get bundles -n fleet-local -w)
-kubectl -n cattle-fleet-system rollout status deploy/fleet-agent
+kubectl -n cattle-fleet-system rollout status statefulset/fleet-agent
 
 # label local cluster
 kubectl patch clusters.fleet.cattle.io -n fleet-local local --type=json -p '[{"op": "add", "path": "/metadata/labels/management.cattle.io~1cluster-display-name", "value": "local" }]'
